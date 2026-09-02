@@ -6,9 +6,12 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from nova_core import (
+    AgentRequest,
     ApprovalState,
     ApprovalTransaction,
     ContentPart,
+    ControlCommand,
+    ControlCommandKind,
     Correlation,
     ErrorCategory,
     ErrorInfo,
@@ -23,6 +26,7 @@ from nova_core import (
     ReasoningPart,
     SamplingParams,
     Session,
+    SessionHistory,
     StopReason,
     TextPart,
     ToolCall,
@@ -122,6 +126,27 @@ class CoreTypeBoundaryTests(unittest.TestCase):
                 code="model.timeout",
                 message="模型请求超时",
                 retryable=True,
+            ),
+            AgentRequest(
+                identity=self.identity,
+                messages=(self.user_message,),
+                correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+            ),
+            SessionHistory(
+                session=Session(
+                    session_id="session-1",
+                    tenant_id="tenant-1",
+                    created_at=self.now,
+                ),
+                messages=(self.user_message,),
+                version=1,
+            ),
+            ControlCommand(
+                command_id="command-1",
+                kind=ControlCommandKind.CANCEL,
+                identity=self.identity,
+                issued_at=self.now,
+                reason="用户取消",
             ),
         )
 

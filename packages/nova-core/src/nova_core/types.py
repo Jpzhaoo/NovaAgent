@@ -108,6 +108,14 @@ class ErrorCategory(str, Enum):
     INTERNAL = "INTERNAL"
 
 
+class ControlCommandKind(str, Enum):
+    """外部控制面允许投递给运行时的命令。"""
+
+    CANCEL = "CANCEL"
+    PAUSE = "PAUSE"
+    RESUME = "RESUME"
+
+
 class Session(_FrozenModel):
     """会话的稳定身份和租户边界。"""
 
@@ -323,6 +331,33 @@ class ModelErrorInfo(_FrozenModel):
     retryable: bool
     provider_code: str | None = None
     extensions: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class AgentRequest(_FrozenModel):
+    """调用 Agent 开始一次 Turn 时使用的唯一输入载体。"""
+
+    identity: TurnIdentity
+    messages: tuple[Message, ...] = Field(min_length=1)
+    correlation: Correlation
+    extensions: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class SessionHistory(_FrozenModel):
+    """SessionStore 返回的原始、可重放消息及乐观锁版本。"""
+
+    session: Session
+    messages: tuple[Message, ...] = ()
+    version: int = Field(default=0, ge=0)
+
+
+class ControlCommand(_FrozenModel):
+    """ControlPort 向指定 Turn 投递的可审计控制命令。"""
+
+    command_id: str = Field(min_length=1)
+    kind: ControlCommandKind
+    identity: TurnIdentity
+    issued_at: AwareDatetime
+    reason: str = Field(min_length=1)
 
 
 class ErrorInfo(_FrozenModel):
