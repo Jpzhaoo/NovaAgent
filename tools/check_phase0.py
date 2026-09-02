@@ -73,7 +73,10 @@ def validate(root: Path) -> tuple[dict[str, int], list[str]]:
         if not init_file.exists():
             errors.append(f"missing import root: {init_file.relative_to(root)}")
         else:
-            source_lines += len(init_file.read_text(encoding="utf-8").splitlines())
+            source_lines += sum(
+                len(source_file.read_text(encoding="utf-8").splitlines())
+                for source_file in (package_dir / "src").rglob("*.py")
+            )
 
     required_docs = (
         "CONTRIBUTING.md",
