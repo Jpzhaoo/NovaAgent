@@ -87,6 +87,12 @@ NovaAgent 是一个面向 Python 3.12+ 的 Graph-driven ReAct Agent 框架。它
 | 崩溃恢复成功率 | ≥99%（1,000 次注入） | ≥99.9% | crash-window 测试 |
 | Graph 拓扑/调度一致性 | 100% | 100% | linear/parallel conformance |
 | ReAct 场景完成率（cassette） | ≥95% | ≥99% | 固定场景集：工具、审批、循环、取消、恢复 |
+| 世界状态断言通过率 | ≥90% | ≥97% | EvalSpec 的文件、命令和业务 oracle |
+| Cassette replay miss | 0 | 0 | 每个 golden case 的所有模型调用 |
+| Judge 重复评测一致率 | ≥85% | ≥95% | 同一 Trace 重复 judge 的 verdict agreement |
+| Memory arm 相对 no-memory arm 提升 | ≥10 个百分点 | ≥20 个百分点 | 冻结 synthetic world 的双臂 probe |
+| 跨用户记忆泄漏 | 0 | 0 | cross-user isolation probe + 安全测试 |
+| Memory 检索 p95 | ≤150ms | ≤80ms | 10k 条记录、固定 embedding/mock retriever |
 | Core 测试覆盖率 | ≥85% | ≥90% | coverage gate |
 | 严格类型检查 | 0 error | 0 error | mypy 或 pyright |
 | 安全旁路 | 0 | 0 | AST + runtime policy tests |
@@ -175,11 +181,42 @@ NovaAgent 是一个面向 Python 3.12+ 的 Graph-driven ReAct Agent 框架。它
 - 每个 Turn 可导出 cassette（GraphSpec hash、ModelRequest、ModelEvents、Node/Deliver events、clock/seed metadata），支持确定性重放。
 - 提供 `nova doctor`，一次检查依赖、配置、模型连通性、工具策略和数据库迁移。
 
+#### FR-09：Agent 评测与回归
+
+- 提供独立的 `nova-eval` 包和 `EvalSpec`，描述任务 ID、多轮输入、工具集/deny-list、world setup、world assertions、expected stop reason 和 metadata；评测 schema 与生产运行时 schema 复用同一套 `Message`、`ToolCall`、`StopReason` 和 Trace 类型。
+- `EvalRunner` 对每个 item 创建隔离的 workspace、session、trace 和 Agent runtime；多轮 item 共享该 item 的历史，但不同 item 之间禁止状态泄漏。支持 `clean`（trace-only）和 `production`（完整治理、checkpoint、loop detection）两种模式。
+- 结果必须同时记录最终回答、每轮结果、stop reason、错误、工具统计、world assertion 结果、执行轮数和 stop mismatch；Agent 的自然语言声明不能作为任务完成的唯一依据。
+- 内置确定性 evaluator：`accuracy`（适用于固定答案的大小写不敏感匹配）、`completion`、`response_length`、`world_state`、`tool_success`，并提供可选的 run-level aggregate。每个 evaluator 返回数值/布尔值、版本、comment 和证据引用。
+- World assertion v1 至少支持 `file_exists`、`file_absent`、`file_contains`、`command_exit`；命令在隔离 workspace 中由 harness 执行，路径必须经过 workspace boundary 校验。后续可增加 HTTP、数据库和业务 API oracle，但不得读取 Agent prose 代替 oracle。
+- 提供 LLM-as-a-judge 后处理：使用独立 judge model、temperature=0、版本化 rubric 和结构化 verdict（`MET|UNMET|NA|CANNOT_ASSESS`）；记录 weighted score、criterion evidence、judge model、rubric hash 和重复评测 agreement。Judge 可以对已有 Trace 重判，不触发 Agent 重跑。
+- 提供 provider-only cassette record/replay：只回放模型请求，工具在 record/replay 两端均真实执行。cassette key 必须包含完整消息、模型、采样参数、max output tokens、工具 schema 和 kwargs；临时 workspace 统一归一化为 `<workspace>`。
+- Golden replay 必须通过四个 gate：fingerprint match、cassette miss=0、每轮无错误且 `COMPLETED`、至少一个非空 world assertion（或显式 `baseline=true`）。Golden 刷新必须人工审核并记录变更原因，不能由 CI 自动覆盖。
+- 提供生产 Trace metrics：stop reason、审批、handoff、工具成功率、迭代数、LLM 调用数、token、延迟、cache、reasoning、memory read/write/compression/utilization 等；数据源可以是 OTel/Langfuse 或本地 JSONL。
+- 提供隔离环境评测适配器，用于验证安装、依赖、workspace、pool、memory、checkpoint resume、成本预算和 artifact 归档；外部环境失败必须区分安装失败、运行失败、Agent 失败和 oracle 失败。
+
+#### FR-10：记忆系统实现
+
+- `nova-memory` 必须是可独立安装的能力包；Core 只依赖 `MemoryPort`，不得直接依赖数据库、向量库或具体 embedding 服务。
+- 记忆分为四层逻辑存储：
+  - **Session Memory**：当前会话的原始消息和工具结果，保证可重放，默认不压缩；
+  - **Archive Memory**：按会话/时间窗口生成的摘要、事件索引和可检索片段；
+  - **Core Memory**：跨会话稳定事实、用户偏好、约束和身份信息，每条记录带来源、置信度、有效期和 superseded 关系；
+  - **Experience Memory**：可复用的操作经验/策略，必须与用户事实隔离，按 agent/scope 授权。
+- 所有记忆记录使用冻结 typed model，至少包含 `memory_id`、`layer`、`scope`、`owner`、`content`、`source_event_ids`、`created_at`、`updated_at`、`confidence`、`valid_from`、`valid_to`、`superseded_by` 和 `retention`；禁止使用无 schema 的 JSON 作为跨模块记忆接口。
+- 提供以下端口：`MemoryWriter`（事件摄取）、`MemoryRetriever`（按 query 检索）、`MemoryCompressor`（摘要/压缩）、`MemoryConsolidator`（Archive→Core/Experience）、`MemoryContextAssembler`（注入上下文）和 `MemoryPolicy`（scope、保留、删除、敏感信息规则）。
+- 记忆摄取必须由 Turn 完成事件驱动，并以 outbox/队列方式异步处理；写入失败不得阻塞最终回答，也不得修改原始 EventStore。写入和删除都要有可追踪的 lifecycle span。
+- 检索流程固定为 `scope filter → lexical/semantic candidate → recency/confidence ranking → deduplicate/superseded filter → token budget packing → injection`。每次注入都附带 provenance（memory_id、score、reason、source event），便于调试和评测。
+- Core/Experience 更新必须经过 consolidation policy：相同事实合并、冲突事实建立版本链、低置信度事实不得覆盖高置信度事实；用户可撤回、删除或冻结某条记忆。敏感字段默认不进入跨会话 Core Memory。
+- Memory context 使用独立 token budget，不得挤占系统指令和当前用户输入；预算不足时按优先级丢弃，并产生 `MemoryTruncated` 事件。压缩不能改写原始消息或 cassette。
+- 每个 Agent/tenant/user/session 都有显式 scope；跨用户检索默认拒绝，父子 Agent 只有声明 `memory_share` capability 才能共享指定层和字段。删除用户时必须级联清理索引、摘要、Core、Experience 引用和缓存。
+- 提供 `memory_enabled=true|false` 的对照运行模式；no-memory arm 必须禁用所有历史注入和 consolidation，但保留相同模型、工具、任务、预算和 trace 采样。
+- 记忆系统必须暴露可评测指标：retrieval recall、temporal ordering、knowledge update、refusal、cross-user isolation、compression ratio/monotonicity、prefix stability、read latency、write cost、injection retention 和 utilization delta。
+
 ### 4.2 P1：Beta 前交付
 
 - `nova-http`：ASGI 适配器，支持 SSE/WebSocket 流、审批回调和历史分页。
 - `nova-cli`：聊天、审批、恢复、日志查询、cassette replay。
-- `nova-memory`：session summary、token budget、可插拔 ArchiveStore；不把长期记忆塞入 Core。
+- `nova-memory`：Session/Archive/Core/Experience 四层、异步 consolidation、token budget、scope isolation 和可插拔 Store；不把长期记忆塞入 ReAct Core state。
 - `nova-mcp`：将 MCP server 映射为普通 ToolProvider，连接生命周期由包内负责。
 - `nova-multi`：父子任务、inbox 和并发上限；暂不承诺跨租户 peer 通信。
 - `nova-scope`：Workspace → Pool → Agent 的声明树、profile 深度合并、能力包启用和 assembly manifest。
@@ -357,6 +394,93 @@ ModelGateway.stream(ModelRequest)
 
 所有序列化使用 `model_dump_json/model_validate_json`；禁止用匿名 `dict` 代替结构化模型。
 
+### 5.8 Memory 运行架构
+
+记忆系统与 ReAct 图通过两个明确的时机连接：`BEFORE_TURN` 读取并注入相关记忆，`END/TurnFinished` 将本轮事件投递给异步写入管线。记忆写入不改变 Graph 状态，也不绕过 EventStore。
+
+```text
+TurnFinished/EventStore
+        ↓ outbox
+MemoryWriter → Session Memory
+        ↓ window/cursor
+MemoryCompressor → Archive Memory
+        ↓ consolidation job
+MemoryConsolidator → Core Memory / Experience Memory
+
+用户输入
+   ↓
+MemoryRetriever(scope + query)
+   ↓
+rank / deduplicate / superseded filter
+   ↓ token budget
+MemoryContextAssembler
+   ↓ provenance 注入
+BEFORE_TURN → LLM
+```
+
+#### 组件与职责
+
+- `MemorySystem`：按 Agent/scope 组装 writer、retriever、compressor、consolidator 和 policy；生命周期由 Session Actor 管理。
+- `SessionStore`：保存原始消息、工具调用和工具结果，使用 event sequence/cursor 增量读取；它是回放的唯一事实源。
+- `ArchiveStore`：保存摘要和可检索片段；每个摘要指向一组不可变 `source_event_ids`，支持重新压缩和审计。
+- `CoreStore`：保存事实/偏好版本链；更新使用 compare-and-swap 或事务，避免并发 consolidation 覆盖。
+- `ExperienceStore`：保存与用户无关的操作经验；默认 scope 为 agent 或 workspace，不能自动提升为 tenant/global。
+- `MemoryRetriever`：提供 lexical、embedding 和 hybrid 三种 adapter；检索算法本身只返回候选，不负责越权放行。
+- `MemoryPolicy`：在读取、写入、共享、删除和注入五个边界执行 scope、敏感信息、retention 和用户撤回规则。
+- `Dream/Consolidation Scheduler`：消费 Archive cursor，限制每次消费量和总 token/cost；检测 cursor 不前进并产生 stalled 诊断。
+
+#### 记忆数据模型
+
+```text
+MemoryRecord
+  memory_id: str
+  layer: SESSION | ARCHIVE | CORE | EXPERIENCE
+  scope: tenant / user / session / agent / workspace
+  owner_id: str
+  content: typed content parts
+  source_event_ids: list[str]
+  confidence: float
+  valid_from / valid_to: datetime | None
+  superseded_by: str | None
+  retention: RetentionPolicy
+
+MemoryQuery(query, scope, layers, top_k, token_budget, as_of)
+MemoryHit(memory_id, score, reason, provenance)
+MemoryContext(items, token_count, truncated, provenance)
+ConsolidationJob(cursor, input_event_ids, output_memory_ids, status)
+```
+
+#### 一致性与隐私不变量
+
+- 原始 Session Memory 只追加，不被摘要覆盖；Archive/Core/Experience 均可删除或重建。
+- `superseded_by` 形成显式版本链；检索默认排除已被替代的记录，但历史回放可以按 `as_of` 查询。
+- 同一个 `idempotency_key` 的写入只产生一个 memory record；重复消费 outbox 不产生重复事实。
+- 记忆注入必须带 provenance，Trace 中记录命中的 ID、层级、得分、截断数量和 policy decision；默认不记录敏感原文。
+- 用户删除请求必须生成可审计的 tombstone，并级联清理派生摘要、索引、缓存和共享引用；清理完成前禁止重新注入。
+- no-memory arm 与 memory arm 使用相同的随机种子、模型参数、工具和任务输入，只改变记忆能力开关。
+
+### 5.9 评测架构与结果模型
+
+评测作为独立进程/包运行，避免与生产 OTel provider 或业务事件循环互相污染。它复用生产 assembly seam，但不直接修改生产代码路径。
+
+```text
+EvalSpec → Dataset/fixture materializer → EvalRunner
+                                      ↓
+                         Agent + real tools + isolated workspace
+                                      ↓
+          EvalTaskOutput + Trace + world oracle + tool statistics
+             ↙                  ↓                    ↘
+  deterministic scores   cassette replay gates    post-hoc LLM Judge
+             ↘                  ↓                    ↙
+                  experiment report / regression gate
+```
+
+- `EvalSpec` 支持单轮/多轮 turns、工具集、deny-list、world setup、world assertions、expected stop 和 metadata；每个 item 有稳定 ID 与 suite version。
+- `EvalTaskOutput` 是评测和回放的唯一 wire shape，包含 `output`、`stop_reason`、`error`、`world_results`、`tool_stats`、`turn_records`、`turns_executed` 和 `stop_mismatches`。
+- 确定性评分与主观评分分离：world/tool/completion/accuracy 先由代码计算；开放式质量再由独立 Judge 按版本化 rubric 评分。任何单一分数都不能覆盖其他 gate。
+- Golden suite 的用例必须覆盖执行结果（例如运行生成文件并检查 exit/stdout）、多轮状态、只读纪律和长轨迹压缩；仅检查文件形状或零断言的 case 只能显式标记为 baseline。
+- 评测报告至少输出 item 通过率、world 通过率、工具错误率、平均迭代/延迟/token、cassette miss、Judge weighted score/agreement，以及 memory/no-memory 差异。
+
 ---
 
 ## 6. 非功能需求
@@ -407,6 +531,24 @@ ModelGateway.stream(ModelRequest)
 7. **Architecture tests**：反向 import、工具旁路 executor、第二套 timeout、未注册工具直执行都必须失败。
 8. **Deterministic evals**：至少 20 个 cassette，覆盖文本、工具、并行、审批、取消、恢复和图节点重放；真实模型仅夜间执行。
 9. **Capability conformance**：Memory 四层隔离、MCP 重连、terminal Ctrl-C、media 引用不泄漏、Scope provenance 和父子 Agent 拓扑。
+
+### 7.1A：Agent 评测验收
+
+- **任务集**：至少 50 个固定 EvalSpec item，其中 ≥20 个包含真实工具副作用，≥10 个为多轮任务，覆盖正常完成、工具错误、审批、取消、循环上限、恢复和只读约束。
+- **World oracle**：所有副作用任务至少有一个可执行 oracle；`file_exists/file_contains` 只能作为补充，代码修复类任务必须执行测试或命令并检查退出码/输出。
+- **隔离性**：随机并发运行 100 个 item，任何 item 不得读取其他 item 的 workspace、session、memory 或 cassette 状态。
+- **回放门禁**：所有 committed golden 必须 fingerprint 匹配、cassette miss=0、所有 turn clean、oracle 非空；缺少任一条件即失败，禁止空 suite 绿灯。
+- **结果完整性**：每个 item 都能关联 root trace、结构化 `EvalTaskOutput`、各 evaluator score 和本地 archive；评测进程异常时保留失败原因和已完成 item。
+- **Judge 质量**：固定 rubric 至少重复评测两次，agreement 低于门槛时标记为需人工复核，不得自动合并或覆盖 golden。
+
+### 7.1B：Memory 评测验收
+
+- 使用固定 seed 生成 facts、persona、session timeline 和 probes；expected truth 必须由 facts 自动推导，禁止人工复制答案造成 oracle 错误。
+- 每个 suite 至少覆盖 extraction、temporal、knowledge update、refusal、cross-user isolation 五类 probe，并为可对照 probe 同时运行 memory/no-memory 两个 arm。
+- deterministic reducer 必须输出每类通过率、NA/CANNOT_ASSESS 数量、整体 success delta 和 provenance；NA 不能静默计为失败或成功。
+- 记忆 arm 必须在检索/更新任务上相对 no-memory arm 达到成功率提升门槛；cross-user isolation 出现一次越权注入即阻断发布。
+- 在长对话中验证 compression ratio、压缩单调性、prefix stability、injection retention、read latency 和 write cost；consolidation cursor 停滞必须显式失败。
+- 运行用户删除、记忆撤回、过期、冲突更新和重复 outbox 消费测试，确认派生索引/缓存清理和幂等性。
 
 ### 7.2 发布门槛
 
@@ -514,7 +656,11 @@ ModelGateway.stream(ModelRequest)
 
 **任务**
 
-- `nova-memory`：Session/Archive/Core Memory/Experience 四层、压缩摘要、token budget 和 ArchiveStore。
+- `nova-memory`：实现 Session/Archive/Core/Experience 四层存储、typed `MemoryRecord`/`MemoryQuery`/`MemoryHit`/`MemoryContext` 模型和对应 ABC。
+- 实现 TurnFinished→outbox→MemoryWriter 的异步摄取；实现 Archive cursor、窗口压缩、Dream/Consolidation Scheduler、Core/Experience 版本链和 idempotency key。
+- 实现 scope filter、lexical/semantic/hybrid retriever、recency/confidence rerank、superseded 过滤、token budget packing 和 provenance 注入。
+- 实现 MemoryPolicy 的读写/共享/删除/retention/sensitive redaction；完成 user、session、agent、workspace、tenant 五级隔离和级联删除。
+- 提供 memory-enabled/no-memory 双臂 harness 与 deterministic reducer，接入五类 probe、压缩/延迟/成本指标和 sentinel gate。
 - `nova-mcp`：MCP ToolProvider、共享连接 registry、断线重连和生命周期管理。
 - `nova-multi`：主 Agent + 子 Agent 星型拓扑、inbox、并发上限、子树取消和 quiesce。
 - `nova-scope`：Workspace/Pool/Agent 声明树、profile 合并、能力包编译和 provenance manifest。
@@ -527,11 +673,14 @@ ModelGateway.stream(ModelRequest)
 
 **任务**
 
-- 完成 20 个 cassette golden、10 个 Graph/ReAct 场景、5 个真实模型 smoke 和 2 个外部应用示例。
+- 实现 `nova-eval`：EvalSpec、隔离 EvalRunner、确定性 evaluators、world assertion harness、Langfuse/local trace adapter 和本地 run archive。
+- 实现 provider-only cassette record/replay、fingerprint/miss/clean-turn/non-vacuous-oracle 四个 gate；提交至少 20 个 golden，覆盖工具副作用、多轮状态、审批、取消、恢复和长轨迹压缩。
+- 实现独立 LLM Judge、rubric SHA 版本、MET/UNMET/NA/CANNOT_ASSESS verdict、重复评测 agreement 和 post-hoc score 注入。
+- 完成 10 个 Graph/ReAct 场景、5 个真实模型 smoke、memory 五类 probe 双臂实验和 2 个外部应用示例。
 - 运行 24 小时、1,000 Turn soak；检查资源泄漏和数据库迁移回滚。
 - 固化性能基线、故障手册、威胁模型和 SBOM；冻结 v1 API。
 
-**验收**：全部 Beta 指标达标；外部试用问题关闭；候选版本带 known limitations。
+**验收**：全部 Beta 指标达标；评测报告可追溯到 item、Trace、oracle 和 rubric；memory arm 达到提升门槛且无跨用户泄漏；外部试用问题关闭；候选版本带 known limitations。
 
 ### Phase 10：Stable 发布（第 18 周）
 
