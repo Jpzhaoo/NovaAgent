@@ -1,0 +1,5 @@
+# Direct development tools for the Phase 0 quality baseline.
+coverage==7.6.1
+mypy==1.14.1
+pytest==8.3.5
+ruff==0.9.10
