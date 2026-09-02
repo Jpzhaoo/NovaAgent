@@ -96,6 +96,18 @@ class ModelErrorKind(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class ErrorCategory(str, Enum):
+    """Core 异常对外投影时使用的稳定类别。"""
+
+    CONTRACT = "CONTRACT"
+    MODEL = "MODEL"
+    TOOL = "TOOL"
+    POLICY = "POLICY"
+    STORAGE = "STORAGE"
+    CONTROL = "CONTROL"
+    INTERNAL = "INTERNAL"
+
+
 class Session(_FrozenModel):
     """会话的稳定身份和租户边界。"""
 
@@ -311,3 +323,14 @@ class ModelErrorInfo(_FrozenModel):
     retryable: bool
     provider_code: str | None = None
     extensions: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ErrorInfo(_FrozenModel):
+    """异常跨事件、进程和存储边界时使用的统一数据形态。"""
+
+    category: ErrorCategory
+    code: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    retryable: bool = False
+    correlation: Correlation | None = None
+    details: dict[str, JsonValue] = Field(default_factory=dict)

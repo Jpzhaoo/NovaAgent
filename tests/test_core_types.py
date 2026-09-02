@@ -10,6 +10,8 @@ from nova_core import (
     ApprovalTransaction,
     ContentPart,
     Correlation,
+    ErrorCategory,
+    ErrorInfo,
     ExecutionMode,
     Message,
     MessageRole,
@@ -112,6 +114,12 @@ class CoreTypeBoundaryTests(unittest.TestCase):
             ),
             ModelErrorInfo(
                 kind=ModelErrorKind.TIMEOUT,
+                message="模型请求超时",
+                retryable=True,
+            ),
+            ErrorInfo(
+                category=ErrorCategory.MODEL,
+                code="model.timeout",
                 message="模型请求超时",
                 retryable=True,
             ),
