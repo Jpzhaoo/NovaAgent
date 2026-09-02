@@ -3,8 +3,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
-
 from nova_core import (
     AgentRequest,
     ApprovalState,
@@ -39,6 +37,7 @@ from nova_core import (
     TurnPhase,
     TurnSnapshot,
 )
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 
 class CoreTypeBoundaryTests(unittest.TestCase):

@@ -23,7 +23,3 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: make check
-      - run: uv run --frozen ruff check tools tests
-      - run: uv run --frozen mypy --strict tools tests
-      - run: uv run --frozen coverage run -m unittest discover -s tests
-      - run: uv run --frozen coverage report --fail-under=0

@@ -67,6 +67,8 @@ class Tool(ABC):
     async def on_cancel(self, call: ToolCall, correlation: Correlation) -> None:
         """释放该调用持有的外部资源；无状态工具可使用默认实现。"""
 
+        return None
+
 
 class PolicyGateway(ABC):
     """在工具副作用发生前给出唯一策略判定。"""

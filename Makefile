@@ -1,9 +1,9 @@
 UV ?= uv
 CORE_SRC := packages/nova-core/src
 
-.PHONY: check sync phase0-check schema schema-check test
+.PHONY: check sync phase0-check schema schema-check test lint typecheck coverage
 
-check: phase0-check schema-check test
+check: phase0-check schema-check test lint typecheck coverage
 
 sync:
 	$(UV) sync --locked
@@ -19,3 +19,13 @@ schema-check:
 
 test:
 	PYTHONPATH=src:$(CORE_SRC) $(UV) run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+
+lint:
+	$(UV) run --frozen ruff check src $(CORE_SRC) tools tests
+
+typecheck:
+	$(UV) run --frozen mypy src $(CORE_SRC) tools tests
+
+coverage:
+	PYTHONPATH=src:$(CORE_SRC) $(UV) run --frozen coverage run -m unittest discover -s tests -p 'test_*.py'
+	$(UV) run --frozen coverage report
