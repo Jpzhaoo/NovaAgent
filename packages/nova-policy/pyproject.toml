@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nova-policy"
+version = "0.1.0.dev0"
+description = "Security and approval policies for NovaAgent"
+requires-python = ">=3.12"
+dependencies = ["nova-core==0.1.0.dev0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

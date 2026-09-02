@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nova-agent-workspace"
+version = "0.1.0.dev0"
+description = "Development workspace for the NovaAgent monorepo"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+
+[tool.nova]
+phase = 0
+python-supported = ["3.12", "3.13"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
