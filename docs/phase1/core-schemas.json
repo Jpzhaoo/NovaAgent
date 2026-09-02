@@ -1,0 +1,5345 @@
+{
+  "catalog": "nova-core",
+  "enums": {
+    "ApprovalState": {
+      "description": "审批事务状态，显式区分拒绝、过期和运行取消。",
+      "enum": [
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "EXPIRED",
+        "CANCELLED"
+      ],
+      "title": "ApprovalState",
+      "type": "string"
+    },
+    "ControlCommandKind": {
+      "description": "外部控制面允许投递给运行时的命令。",
+      "enum": [
+        "CANCEL",
+        "PAUSE",
+        "RESUME"
+      ],
+      "title": "ControlCommandKind",
+      "type": "string"
+    },
+    "ErrorCategory": {
+      "description": "Core 异常对外投影时使用的稳定类别。",
+      "enum": [
+        "CONTRACT",
+        "MODEL",
+        "TOOL",
+        "POLICY",
+        "STORAGE",
+        "CONTROL",
+        "INTERNAL"
+      ],
+      "title": "ErrorCategory",
+      "type": "string"
+    },
+    "ExecutionMode": {
+      "description": "工具调度方式；独占调用会在批次中形成并发屏障。",
+      "enum": [
+        "PARALLEL",
+        "EXCLUSIVE"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "MessageRole": {
+      "description": "对话历史中消息的发送者角色。",
+      "enum": [
+        "system",
+        "user",
+        "assistant",
+        "tool"
+      ],
+      "title": "MessageRole",
+      "type": "string"
+    },
+    "ModelErrorKind": {
+      "description": "供应商错误经过 Core 归一化后的可观测分类。",
+      "enum": [
+        "AUTHENTICATION",
+        "RATE_LIMIT",
+        "TIMEOUT",
+        "PROTOCOL",
+        "CONTENT",
+        "UNKNOWN"
+      ],
+      "title": "ModelErrorKind",
+      "type": "string"
+    },
+    "ModelFinishReason": {
+      "description": "供应商完成原因经过协议适配后的稳定分类。",
+      "enum": [
+        "STOP",
+        "TOOL_CALLS",
+        "LENGTH",
+        "CONTENT_FILTER"
+      ],
+      "title": "ModelFinishReason",
+      "type": "string"
+    },
+    "PolicyOutcome": {
+      "description": "策略网关对单次工具调用给出的判定。",
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "REQUIRE_APPROVAL"
+      ],
+      "title": "PolicyOutcome",
+      "type": "string"
+    },
+    "StopReason": {
+      "description": "Agent 结束运行时可持久化、可统计的原因。",
+      "enum": [
+        "COMPLETED",
+        "MAX_ITERATIONS",
+        "LOOP_DETECTED",
+        "MODEL_ERROR",
+        "STRUCTURED_OUTPUT_ERROR",
+        "CANCELLED",
+        "APPROVAL_REJECTED"
+      ],
+      "title": "StopReason",
+      "type": "string"
+    },
+    "ToolRisk": {
+      "description": "工具声明的风险等级；危险工具必须经过策略端口。",
+      "enum": [
+        "SAFE",
+        "SENSITIVE",
+        "DANGEROUS"
+      ],
+      "title": "ToolRisk",
+      "type": "string"
+    },
+    "TurnPhase": {
+      "description": "一次 Turn 对外可观察的生命周期阶段。",
+      "enum": [
+        "RECEIVED",
+        "RUNNING",
+        "WAITING_APPROVAL",
+        "CANCELLING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "title": "TurnPhase",
+      "type": "string"
+    }
+  },
+  "models": {
+    "AgentRequest": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "JsonValue": {},
+        "Message": {
+          "additionalProperties": false,
+          "description": "可重放的对话消息，内容部件通过 ``kind`` 判别。",
+          "properties": {
+            "content_parts": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "reasoning": "#/$defs/ReasoningPart",
+                    "text": "#/$defs/TextPart",
+                    "tool_call": "#/$defs/ToolCallPart",
+                    "tool_result": "#/$defs/ToolResultPart"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ReasoningPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolCallPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolResultPart"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "role": {
+              "$ref": "#/$defs/MessageRole"
+            }
+          },
+          "required": [
+            "role",
+            "content_parts",
+            "created_at"
+          ],
+          "title": "Message",
+          "type": "object"
+        },
+        "MessageRole": {
+          "description": "对话历史中消息的发送者角色。",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "MessageRole",
+          "type": "string"
+        },
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "调用 Agent 开始一次 Turn 时使用的唯一输入载体。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "identity": {
+          "$ref": "#/$defs/TurnIdentity"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "minItems": 1,
+          "title": "Messages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identity",
+        "messages",
+        "correlation"
+      ],
+      "title": "AgentRequest",
+      "type": "object"
+    },
+    "ApprovalRequested": {
+      "$defs": {
+        "ApprovalState": {
+          "description": "审批事务状态，显式区分拒绝、过期和运行取消。",
+          "enum": [
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+            "EXPIRED",
+            "CANCELLED"
+          ],
+          "title": "ApprovalState",
+          "type": "string"
+        },
+        "ApprovalTransaction": {
+          "additionalProperties": false,
+          "description": "可跨进程恢复并执行原子判定的人工作业审批。",
+          "properties": {
+            "approval_id": {
+              "minLength": 1,
+              "title": "Approval Id",
+              "type": "string"
+            },
+            "calls": {
+              "items": {
+                "$ref": "#/$defs/ToolCall"
+              },
+              "minItems": 1,
+              "title": "Calls",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "title": "Expires At",
+              "type": "string"
+            },
+            "identity": {
+              "$ref": "#/$defs/TurnIdentity"
+            },
+            "reasons": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Reasons",
+              "type": "array"
+            },
+            "state": {
+              "$ref": "#/$defs/ApprovalState",
+              "default": "PENDING"
+            },
+            "summary": {
+              "minLength": 1,
+              "title": "Summary",
+              "type": "string"
+            }
+          },
+          "required": [
+            "approval_id",
+            "identity",
+            "calls",
+            "summary",
+            "reasons",
+            "created_at",
+            "expires_at"
+          ],
+          "title": "ApprovalTransaction",
+          "type": "object"
+        },
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "JsonValue": {},
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "工具批次暂停并等待原子审批判定。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval_requested",
+          "default": "approval_requested",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "transaction": {
+          "$ref": "#/$defs/ApprovalTransaction"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "transaction"
+      ],
+      "title": "ApprovalRequested",
+      "type": "object"
+    },
+    "ApprovalTransaction": {
+      "$defs": {
+        "ApprovalState": {
+          "description": "审批事务状态，显式区分拒绝、过期和运行取消。",
+          "enum": [
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+            "EXPIRED",
+            "CANCELLED"
+          ],
+          "title": "ApprovalState",
+          "type": "string"
+        },
+        "JsonValue": {},
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "可跨进程恢复并执行原子判定的人工作业审批。",
+      "properties": {
+        "approval_id": {
+          "minLength": 1,
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/ToolCall"
+          },
+          "minItems": 1,
+          "title": "Calls",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/TurnIdentity"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/ApprovalState",
+          "default": "PENDING"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "identity",
+        "calls",
+        "summary",
+        "reasons",
+        "created_at",
+        "expires_at"
+      ],
+      "title": "ApprovalTransaction",
+      "type": "object"
+    },
+    "ControlCommand": {
+      "$defs": {
+        "ControlCommandKind": {
+          "description": "外部控制面允许投递给运行时的命令。",
+          "enum": [
+            "CANCEL",
+            "PAUSE",
+            "RESUME"
+          ],
+          "title": "ControlCommandKind",
+          "type": "string"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "ControlPort 向指定 Turn 投递的可审计控制命令。",
+      "properties": {
+        "command_id": {
+          "minLength": 1,
+          "title": "Command Id",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/TurnIdentity"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ControlCommandKind"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "kind",
+        "identity",
+        "issued_at",
+        "reason"
+      ],
+      "title": "ControlCommand",
+      "type": "object"
+    },
+    "Correlation": {
+      "additionalProperties": false,
+      "description": "把请求、事件和工具调用关联到同一条执行链。",
+      "properties": {
+        "span_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span Id"
+        },
+        "trace_id": {
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "turn_id": {
+          "minLength": 1,
+          "title": "Turn Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn_id",
+        "trace_id"
+      ],
+      "title": "Correlation",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "ErrorCategory": {
+          "description": "Core 异常对外投影时使用的稳定类别。",
+          "enum": [
+            "CONTRACT",
+            "MODEL",
+            "TOOL",
+            "POLICY",
+            "STORAGE",
+            "CONTROL",
+            "INTERNAL"
+          ],
+          "title": "ErrorCategory",
+          "type": "string"
+        },
+        "JsonValue": {}
+      },
+      "additionalProperties": false,
+      "description": "异常跨事件、进程和存储边界时使用的统一数据形态。",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/ErrorCategory"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "correlation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Correlation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "details": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "code",
+        "message"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "GraphInterrupted": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "图在显式业务或人工断点处持久化并挂起。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "interrupt_id": {
+          "minLength": 1,
+          "title": "Interrupt Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "graph_interrupted",
+          "default": "graph_interrupted",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "interrupt_id",
+        "reason"
+      ],
+      "title": "GraphInterrupted",
+      "type": "object"
+    },
+    "GraphStarted": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "图实例通过 bootstrap 后开始调度。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "graph_id": {
+          "minLength": 1,
+          "title": "Graph Id",
+          "type": "string"
+        },
+        "graph_spec_hash": {
+          "minLength": 1,
+          "title": "Graph Spec Hash",
+          "type": "string"
+        },
+        "kind": {
+          "const": "graph_started",
+          "default": "graph_started",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "graph_id",
+        "graph_spec_hash"
+      ],
+      "title": "GraphStarted",
+      "type": "object"
+    },
+    "Message": {
+      "$defs": {
+        "JsonValue": {},
+        "MessageRole": {
+          "description": "对话历史中消息的发送者角色。",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "MessageRole",
+          "type": "string"
+        },
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "可重放的对话消息，内容部件通过 ``kind`` 判别。",
+      "properties": {
+        "content_parts": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "reasoning": "#/$defs/ReasoningPart",
+                "text": "#/$defs/TextPart",
+                "tool_call": "#/$defs/ToolCallPart",
+                "tool_result": "#/$defs/ToolResultPart"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextPart"
+              },
+              {
+                "$ref": "#/$defs/ReasoningPart"
+              },
+              {
+                "$ref": "#/$defs/ToolCallPart"
+              },
+              {
+                "$ref": "#/$defs/ToolResultPart"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Content Parts",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "role": {
+          "$ref": "#/$defs/MessageRole"
+        }
+      },
+      "required": [
+        "role",
+        "content_parts",
+        "created_at"
+      ],
+      "title": "Message",
+      "type": "object"
+    },
+    "ModelCompleted": {
+      "$defs": {
+        "ModelFinishReason": {
+          "description": "供应商完成原因经过协议适配后的稳定分类。",
+          "enum": [
+            "STOP",
+            "TOOL_CALLS",
+            "LENGTH",
+            "CONTENT_FILTER"
+          ],
+          "title": "ModelFinishReason",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "模型流正常结束，并给出归一化完成原因。",
+      "properties": {
+        "finish_reason": {
+          "$ref": "#/$defs/ModelFinishReason"
+        },
+        "kind": {
+          "const": "model_completed",
+          "default": "model_completed",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finish_reason"
+      ],
+      "title": "ModelCompleted",
+      "type": "object"
+    },
+    "ModelErrorInfo": {
+      "$defs": {
+        "JsonValue": {},
+        "ModelErrorKind": {
+          "description": "供应商错误经过 Core 归一化后的可观测分类。",
+          "enum": [
+            "AUTHENTICATION",
+            "RATE_LIMIT",
+            "TIMEOUT",
+            "PROTOCOL",
+            "CONTENT",
+            "UNKNOWN"
+          ],
+          "title": "ModelErrorKind",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "供事件和异常共同引用的模型错误摘要。",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "kind": {
+          "$ref": "#/$defs/ModelErrorKind"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "provider_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Code"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "retryable"
+      ],
+      "title": "ModelErrorInfo",
+      "type": "object"
+    },
+    "ModelFailed": {
+      "$defs": {
+        "JsonValue": {},
+        "ModelErrorInfo": {
+          "additionalProperties": false,
+          "description": "供事件和异常共同引用的模型错误摘要。",
+          "properties": {
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "kind": {
+              "$ref": "#/$defs/ModelErrorKind"
+            },
+            "message": {
+              "minLength": 1,
+              "title": "Message",
+              "type": "string"
+            },
+            "provider_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Provider Code"
+            },
+            "retryable": {
+              "title": "Retryable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "retryable"
+          ],
+          "title": "ModelErrorInfo",
+          "type": "object"
+        },
+        "ModelErrorKind": {
+          "description": "供应商错误经过 Core 归一化后的可观测分类。",
+          "enum": [
+            "AUTHENTICATION",
+            "RATE_LIMIT",
+            "TIMEOUT",
+            "PROTOCOL",
+            "CONTENT",
+            "UNKNOWN"
+          ],
+          "title": "ModelErrorKind",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "模型流以结构化供应商错误结束。",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ModelErrorInfo"
+        },
+        "kind": {
+          "const": "model_failed",
+          "default": "model_failed",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "title": "ModelFailed",
+      "type": "object"
+    },
+    "ModelReasoningDelta": {
+      "additionalProperties": false,
+      "description": "模型流中可按策略隐藏的推理增量。",
+      "properties": {
+        "delta": {
+          "minLength": 1,
+          "title": "Delta",
+          "type": "string"
+        },
+        "kind": {
+          "const": "model_reasoning_delta",
+          "default": "model_reasoning_delta",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta"
+      ],
+      "title": "ModelReasoningDelta",
+      "type": "object"
+    },
+    "ModelRequest": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "ExecutionMode": {
+          "description": "工具调度方式；独占调用会在批次中形成并发屏障。",
+          "enum": [
+            "PARALLEL",
+            "EXCLUSIVE"
+          ],
+          "title": "ExecutionMode",
+          "type": "string"
+        },
+        "JsonValue": {},
+        "Message": {
+          "additionalProperties": false,
+          "description": "可重放的对话消息，内容部件通过 ``kind`` 判别。",
+          "properties": {
+            "content_parts": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "reasoning": "#/$defs/ReasoningPart",
+                    "text": "#/$defs/TextPart",
+                    "tool_call": "#/$defs/ToolCallPart",
+                    "tool_result": "#/$defs/ToolResultPart"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ReasoningPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolCallPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolResultPart"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "role": {
+              "$ref": "#/$defs/MessageRole"
+            }
+          },
+          "required": [
+            "role",
+            "content_parts",
+            "created_at"
+          ],
+          "title": "Message",
+          "type": "object"
+        },
+        "MessageRole": {
+          "description": "对话历史中消息的发送者角色。",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "MessageRole",
+          "type": "string"
+        },
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "SamplingParams": {
+          "additionalProperties": false,
+          "description": "与供应商无关的基础采样参数。",
+          "properties": {
+            "max_output_tokens": {
+              "default": 4096,
+              "exclusiveMinimum": 0,
+              "title": "Max Output Tokens",
+              "type": "integer"
+            },
+            "temperature": {
+              "default": 0.0,
+              "maximum": 2.0,
+              "minimum": 0.0,
+              "title": "Temperature",
+              "type": "number"
+            },
+            "top_p": {
+              "default": 1.0,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Top P",
+              "type": "number"
+            }
+          },
+          "title": "SamplingParams",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolDefinition": {
+          "additionalProperties": false,
+          "description": "发送给模型的工具 schema 以及安全、并发声明。",
+          "properties": {
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "execution": {
+              "$ref": "#/$defs/ExecutionMode"
+            },
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "input_schema": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Input Schema",
+              "type": "object"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "risk": {
+              "$ref": "#/$defs/ToolRisk"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "input_schema",
+            "risk",
+            "execution"
+          ],
+          "title": "ToolDefinition",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        },
+        "ToolRisk": {
+          "description": "工具声明的风险等级；危险工具必须经过策略端口。",
+          "enum": [
+            "SAFE",
+            "SENSITIVE",
+            "DANGEROUS"
+          ],
+          "title": "ToolRisk",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "ModelGateway 唯一接受的请求载体。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "minItems": 1,
+          "title": "Messages",
+          "type": "array"
+        },
+        "model": {
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "sampling": {
+          "$ref": "#/$defs/SamplingParams"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToolDefinition"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "model",
+        "messages",
+        "correlation"
+      ],
+      "title": "ModelRequest",
+      "type": "object"
+    },
+    "ModelTextDelta": {
+      "additionalProperties": false,
+      "description": "模型流中新增的可展示文本。",
+      "properties": {
+        "delta": {
+          "minLength": 1,
+          "title": "Delta",
+          "type": "string"
+        },
+        "kind": {
+          "const": "model_text_delta",
+          "default": "model_text_delta",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta"
+      ],
+      "title": "ModelTextDelta",
+      "type": "object"
+    },
+    "ModelToolCallDelta": {
+      "additionalProperties": false,
+      "description": "模型流中按序到达的工具名称或 JSON 参数片段。",
+      "properties": {
+        "arguments_delta": {
+          "default": "",
+          "title": "Arguments Delta",
+          "type": "string"
+        },
+        "call_id": {
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "model_tool_call_delta",
+          "default": "model_tool_call_delta",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "call_id",
+        "seq"
+      ],
+      "title": "ModelToolCallDelta",
+      "type": "object"
+    },
+    "ModelUsage": {
+      "additionalProperties": false,
+      "description": "一次模型调用累计报告的 token 用量。",
+      "properties": {
+        "cached_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cached Input Tokens",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "model_usage",
+          "default": "model_usage",
+          "title": "Kind",
+          "type": "string"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens"
+      ],
+      "title": "ModelUsage",
+      "type": "object"
+    },
+    "NodeFinished": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "节点 invocation 完成并准备提升 staged deliver。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "number"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "invocation_version": {
+          "minimum": 1,
+          "title": "Invocation Version",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "node_finished",
+          "default": "node_finished",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "node_id",
+        "invocation_version",
+        "duration_ms"
+      ],
+      "title": "NodeFinished",
+      "type": "object"
+    },
+    "NodeStarted": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "一个带版本号的节点 invocation 开始。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "invocation_version": {
+          "minimum": 1,
+          "title": "Invocation Version",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "node_started",
+          "default": "node_started",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "node_id",
+        "invocation_version"
+      ],
+      "title": "NodeStarted",
+      "type": "object"
+    },
+    "PolicyDecision": {
+      "$defs": {
+        "JsonValue": {},
+        "PolicyOutcome": {
+          "description": "策略网关对单次工具调用给出的判定。",
+          "enum": [
+            "ALLOW",
+            "DENY",
+            "REQUIRE_APPROVAL"
+          ],
+          "title": "PolicyOutcome",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "可审计的策略判定；拒绝与审批都必须携带原因。",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "outcome": {
+          "$ref": "#/$defs/PolicyOutcome"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "required_approval": {
+          "default": false,
+          "title": "Required Approval",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "outcome",
+        "reasons"
+      ],
+      "title": "PolicyDecision",
+      "type": "object"
+    },
+    "ReasoningDelta": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "面向获准消费者发布的推理文本增量。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "delta": {
+          "minLength": 1,
+          "title": "Delta",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "reasoning_delta",
+          "default": "reasoning_delta",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "delta"
+      ],
+      "title": "ReasoningDelta",
+      "type": "object"
+    },
+    "ReasoningPart": {
+      "additionalProperties": false,
+      "description": "可按脱敏策略隐藏的推理文本。",
+      "properties": {
+        "kind": {
+          "const": "reasoning",
+          "default": "reasoning",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ReasoningPart",
+      "type": "object"
+    },
+    "SamplingParams": {
+      "additionalProperties": false,
+      "description": "与供应商无关的基础采样参数。",
+      "properties": {
+        "max_output_tokens": {
+          "default": 4096,
+          "exclusiveMinimum": 0,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
+        "temperature": {
+          "default": 0.0,
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "top_p": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Top P",
+          "type": "number"
+        }
+      },
+      "title": "SamplingParams",
+      "type": "object"
+    },
+    "Session": {
+      "$defs": {
+        "JsonValue": {}
+      },
+      "additionalProperties": false,
+      "description": "会话的稳定身份和租户边界。",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "tenant_id": {
+          "minLength": 1,
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "tenant_id",
+        "created_at"
+      ],
+      "title": "Session",
+      "type": "object"
+    },
+    "SessionHistory": {
+      "$defs": {
+        "JsonValue": {},
+        "Message": {
+          "additionalProperties": false,
+          "description": "可重放的对话消息，内容部件通过 ``kind`` 判别。",
+          "properties": {
+            "content_parts": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "reasoning": "#/$defs/ReasoningPart",
+                    "text": "#/$defs/TextPart",
+                    "tool_call": "#/$defs/ToolCallPart",
+                    "tool_result": "#/$defs/ToolResultPart"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ReasoningPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolCallPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolResultPart"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "role": {
+              "$ref": "#/$defs/MessageRole"
+            }
+          },
+          "required": [
+            "role",
+            "content_parts",
+            "created_at"
+          ],
+          "title": "Message",
+          "type": "object"
+        },
+        "MessageRole": {
+          "description": "对话历史中消息的发送者角色。",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "MessageRole",
+          "type": "string"
+        },
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "Session": {
+          "additionalProperties": false,
+          "description": "会话的稳定身份和租户边界。",
+          "properties": {
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Metadata",
+              "type": "object"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "tenant_id": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id",
+            "tenant_id",
+            "created_at"
+          ],
+          "title": "Session",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "SessionStore 返回的原始、可重放消息及乐观锁版本。",
+      "properties": {
+        "messages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "session": {
+          "$ref": "#/$defs/Session"
+        },
+        "version": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "title": "SessionHistory",
+      "type": "object"
+    },
+    "TextDelta": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "面向实时消费者发布的回答文本增量。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "delta": {
+          "minLength": 1,
+          "title": "Delta",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "text_delta",
+          "default": "text_delta",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "delta"
+      ],
+      "title": "TextDelta",
+      "type": "object"
+    },
+    "TextPart": {
+      "additionalProperties": false,
+      "description": "可展示的普通文本内容。",
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TextPart",
+      "type": "object"
+    },
+    "ToolCall": {
+      "$defs": {
+        "JsonValue": {}
+      },
+      "additionalProperties": false,
+      "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+      "properties": {
+        "arguments": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "call_id": {
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "call_id",
+        "name",
+        "seq",
+        "idempotency_key"
+      ],
+      "title": "ToolCall",
+      "type": "object"
+    },
+    "ToolCallFinished": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolResult": {
+          "additionalProperties": false,
+          "description": "工具执行后供历史、事件与幂等缓存共用的结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "content_parts": {
+              "items": {
+                "$ref": "#/$defs/TextPart"
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "content_parts",
+            "idempotency_key"
+          ],
+          "title": "ToolResult",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "工具调用结束；事件可按完成顺序发布。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "tool_call_finished",
+          "default": "tool_call_finished",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/ToolResult"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "result"
+      ],
+      "title": "ToolCallFinished",
+      "type": "object"
+    },
+    "ToolCallPart": {
+      "$defs": {
+        "JsonValue": {},
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "助手消息中已完成组装的工具调用。",
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/ToolCall"
+        },
+        "kind": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call"
+      ],
+      "title": "ToolCallPart",
+      "type": "object"
+    },
+    "ToolCallStarted": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "JsonValue": {},
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "工具调用通过 admission 并开始执行。",
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/ToolCall"
+        },
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "tool_call_started",
+          "default": "tool_call_started",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "call"
+      ],
+      "title": "ToolCallStarted",
+      "type": "object"
+    },
+    "ToolDefinition": {
+      "$defs": {
+        "ExecutionMode": {
+          "description": "工具调度方式；独占调用会在批次中形成并发屏障。",
+          "enum": [
+            "PARALLEL",
+            "EXCLUSIVE"
+          ],
+          "title": "ExecutionMode",
+          "type": "string"
+        },
+        "JsonValue": {},
+        "ToolRisk": {
+          "description": "工具声明的风险等级；危险工具必须经过策略端口。",
+          "enum": [
+            "SAFE",
+            "SENSITIVE",
+            "DANGEROUS"
+          ],
+          "title": "ToolRisk",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "发送给模型的工具 schema 以及安全、并发声明。",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionMode"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "input_schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "risk": {
+          "$ref": "#/$defs/ToolRisk"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "input_schema",
+        "risk",
+        "execution"
+      ],
+      "title": "ToolDefinition",
+      "type": "object"
+    },
+    "ToolResult": {
+      "$defs": {
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "工具执行后供历史、事件与幂等缓存共用的结果。",
+      "properties": {
+        "call_id": {
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "content_parts": {
+          "items": {
+            "$ref": "#/$defs/TextPart"
+          },
+          "minItems": 1,
+          "title": "Content Parts",
+          "type": "array"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "is_error": {
+          "default": false,
+          "title": "Is Error",
+          "type": "boolean"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "name",
+        "content_parts",
+        "idempotency_key"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    },
+    "ToolResultPart": {
+      "additionalProperties": false,
+      "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+      "properties": {
+        "call_id": {
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "is_error": {
+          "default": false,
+          "title": "Is Error",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "title": "Kind",
+          "type": "string"
+        },
+        "output": {
+          "title": "Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "output"
+      ],
+      "title": "ToolResultPart",
+      "type": "object"
+    },
+    "TurnFailed": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "ErrorCategory": {
+          "description": "Core 异常对外投影时使用的稳定类别。",
+          "enum": [
+            "CONTRACT",
+            "MODEL",
+            "TOOL",
+            "POLICY",
+            "STORAGE",
+            "CONTROL",
+            "INTERNAL"
+          ],
+          "title": "ErrorCategory",
+          "type": "string"
+        },
+        "ErrorInfo": {
+          "additionalProperties": false,
+          "description": "异常跨事件、进程和存储边界时使用的统一数据形态。",
+          "properties": {
+            "category": {
+              "$ref": "#/$defs/ErrorCategory"
+            },
+            "code": {
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            },
+            "correlation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Correlation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "details": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Details",
+              "type": "object"
+            },
+            "message": {
+              "minLength": 1,
+              "title": "Message",
+              "type": "string"
+            },
+            "retryable": {
+              "default": false,
+              "title": "Retryable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "category",
+            "code",
+            "message"
+          ],
+          "title": "ErrorInfo",
+          "type": "object"
+        },
+        "JsonValue": {}
+      },
+      "additionalProperties": false,
+      "description": "Turn 因不可收敛错误终止时唯一的失败事件。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorInfo"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "turn_failed",
+          "default": "turn_failed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "error"
+      ],
+      "title": "TurnFailed",
+      "type": "object"
+    },
+    "TurnFinished": {
+      "$defs": {
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "StopReason": {
+          "description": "Agent 结束运行时可持久化、可统计的原因。",
+          "enum": [
+            "COMPLETED",
+            "MAX_ITERATIONS",
+            "LOOP_DETECTED",
+            "MODEL_ERROR",
+            "STRUCTURED_OUTPUT_ERROR",
+            "CANCELLED",
+            "APPROVAL_REJECTED"
+          ],
+          "title": "StopReason",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Turn 正常或受控停止时唯一的完成事件。",
+      "properties": {
+        "correlation": {
+          "$ref": "#/$defs/Correlation"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "turn_finished",
+          "default": "turn_finished",
+          "title": "Kind",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "$ref": "#/$defs/StopReason"
+        }
+      },
+      "required": [
+        "event_id",
+        "seq",
+        "occurred_at",
+        "correlation",
+        "stop_reason"
+      ],
+      "title": "TurnFinished",
+      "type": "object"
+    },
+    "TurnIdentity": {
+      "additionalProperties": false,
+      "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+      "properties": {
+        "parent_turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Turn Id"
+        },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "turn_id": {
+          "minLength": 1,
+          "title": "Turn Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn_id",
+        "session_id"
+      ],
+      "title": "TurnIdentity",
+      "type": "object"
+    },
+    "TurnSnapshot": {
+      "$defs": {
+        "JsonValue": {},
+        "Message": {
+          "additionalProperties": false,
+          "description": "可重放的对话消息，内容部件通过 ``kind`` 判别。",
+          "properties": {
+            "content_parts": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "reasoning": "#/$defs/ReasoningPart",
+                    "text": "#/$defs/TextPart",
+                    "tool_call": "#/$defs/ToolCallPart",
+                    "tool_result": "#/$defs/ToolResultPart"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/TextPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ReasoningPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolCallPart"
+                  },
+                  {
+                    "$ref": "#/$defs/ToolResultPart"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "role": {
+              "$ref": "#/$defs/MessageRole"
+            }
+          },
+          "required": [
+            "role",
+            "content_parts",
+            "created_at"
+          ],
+          "title": "Message",
+          "type": "object"
+        },
+        "MessageRole": {
+          "description": "对话历史中消息的发送者角色。",
+          "enum": [
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "title": "MessageRole",
+          "type": "string"
+        },
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "StopReason": {
+          "description": "Agent 结束运行时可持久化、可统计的原因。",
+          "enum": [
+            "COMPLETED",
+            "MAX_ITERATIONS",
+            "LOOP_DETECTED",
+            "MODEL_ERROR",
+            "STRUCTURED_OUTPUT_ERROR",
+            "CANCELLED",
+            "APPROVAL_REJECTED"
+          ],
+          "title": "StopReason",
+          "type": "string"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        },
+        "TurnPhase": {
+          "description": "一次 Turn 对外可观察的生命周期阶段。",
+          "enum": [
+            "RECEIVED",
+            "RUNNING",
+            "WAITING_APPROVAL",
+            "CANCELLING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELLED"
+          ],
+          "title": "TurnPhase",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "恢复当前 Turn 所需的值快照，不包含任何运行时对象。",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "identity": {
+          "$ref": "#/$defs/TurnIdentity"
+        },
+        "last_event_seq": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Last Event Seq",
+          "type": "integer"
+        },
+        "messages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "pending_calls": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToolCall"
+          },
+          "title": "Pending Calls",
+          "type": "array"
+        },
+        "phase": {
+          "$ref": "#/$defs/TurnPhase"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "schema_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "trace_id": {
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identity",
+        "phase",
+        "trace_id"
+      ],
+      "title": "TurnSnapshot",
+      "type": "object"
+    }
+  },
+  "schema_version": 1,
+  "unions": {
+    "AgentEvent": {
+      "$defs": {
+        "ApprovalRequested": {
+          "additionalProperties": false,
+          "description": "工具批次暂停并等待原子审批判定。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "approval_requested",
+              "default": "approval_requested",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            },
+            "transaction": {
+              "$ref": "#/$defs/ApprovalTransaction"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "transaction"
+          ],
+          "title": "ApprovalRequested",
+          "type": "object"
+        },
+        "ApprovalState": {
+          "description": "审批事务状态，显式区分拒绝、过期和运行取消。",
+          "enum": [
+            "PENDING",
+            "APPROVED",
+            "REJECTED",
+            "EXPIRED",
+            "CANCELLED"
+          ],
+          "title": "ApprovalState",
+          "type": "string"
+        },
+        "ApprovalTransaction": {
+          "additionalProperties": false,
+          "description": "可跨进程恢复并执行原子判定的人工作业审批。",
+          "properties": {
+            "approval_id": {
+              "minLength": 1,
+              "title": "Approval Id",
+              "type": "string"
+            },
+            "calls": {
+              "items": {
+                "$ref": "#/$defs/ToolCall"
+              },
+              "minItems": 1,
+              "title": "Calls",
+              "type": "array"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "title": "Expires At",
+              "type": "string"
+            },
+            "identity": {
+              "$ref": "#/$defs/TurnIdentity"
+            },
+            "reasons": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Reasons",
+              "type": "array"
+            },
+            "state": {
+              "$ref": "#/$defs/ApprovalState",
+              "default": "PENDING"
+            },
+            "summary": {
+              "minLength": 1,
+              "title": "Summary",
+              "type": "string"
+            }
+          },
+          "required": [
+            "approval_id",
+            "identity",
+            "calls",
+            "summary",
+            "reasons",
+            "created_at",
+            "expires_at"
+          ],
+          "title": "ApprovalTransaction",
+          "type": "object"
+        },
+        "Correlation": {
+          "additionalProperties": false,
+          "description": "把请求、事件和工具调用关联到同一条执行链。",
+          "properties": {
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_id": {
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "trace_id"
+          ],
+          "title": "Correlation",
+          "type": "object"
+        },
+        "ErrorCategory": {
+          "description": "Core 异常对外投影时使用的稳定类别。",
+          "enum": [
+            "CONTRACT",
+            "MODEL",
+            "TOOL",
+            "POLICY",
+            "STORAGE",
+            "CONTROL",
+            "INTERNAL"
+          ],
+          "title": "ErrorCategory",
+          "type": "string"
+        },
+        "ErrorInfo": {
+          "additionalProperties": false,
+          "description": "异常跨事件、进程和存储边界时使用的统一数据形态。",
+          "properties": {
+            "category": {
+              "$ref": "#/$defs/ErrorCategory"
+            },
+            "code": {
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            },
+            "correlation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Correlation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "details": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Details",
+              "type": "object"
+            },
+            "message": {
+              "minLength": 1,
+              "title": "Message",
+              "type": "string"
+            },
+            "retryable": {
+              "default": false,
+              "title": "Retryable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "category",
+            "code",
+            "message"
+          ],
+          "title": "ErrorInfo",
+          "type": "object"
+        },
+        "GraphInterrupted": {
+          "additionalProperties": false,
+          "description": "图在显式业务或人工断点处持久化并挂起。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "interrupt_id": {
+              "minLength": 1,
+              "title": "Interrupt Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "graph_interrupted",
+              "default": "graph_interrupted",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "reason": {
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "interrupt_id",
+            "reason"
+          ],
+          "title": "GraphInterrupted",
+          "type": "object"
+        },
+        "GraphStarted": {
+          "additionalProperties": false,
+          "description": "图实例通过 bootstrap 后开始调度。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "graph_id": {
+              "minLength": 1,
+              "title": "Graph Id",
+              "type": "string"
+            },
+            "graph_spec_hash": {
+              "minLength": 1,
+              "title": "Graph Spec Hash",
+              "type": "string"
+            },
+            "kind": {
+              "const": "graph_started",
+              "default": "graph_started",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "graph_id",
+            "graph_spec_hash"
+          ],
+          "title": "GraphStarted",
+          "type": "object"
+        },
+        "JsonValue": {},
+        "NodeFinished": {
+          "additionalProperties": false,
+          "description": "节点 invocation 完成并准备提升 staged deliver。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "duration_ms": {
+              "minimum": 0,
+              "title": "Duration Ms",
+              "type": "number"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "invocation_version": {
+              "minimum": 1,
+              "title": "Invocation Version",
+              "type": "integer"
+            },
+            "kind": {
+              "const": "node_finished",
+              "default": "node_finished",
+              "title": "Kind",
+              "type": "string"
+            },
+            "node_id": {
+              "minLength": 1,
+              "title": "Node Id",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "node_id",
+            "invocation_version",
+            "duration_ms"
+          ],
+          "title": "NodeFinished",
+          "type": "object"
+        },
+        "NodeStarted": {
+          "additionalProperties": false,
+          "description": "一个带版本号的节点 invocation 开始。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "invocation_version": {
+              "minimum": 1,
+              "title": "Invocation Version",
+              "type": "integer"
+            },
+            "kind": {
+              "const": "node_started",
+              "default": "node_started",
+              "title": "Kind",
+              "type": "string"
+            },
+            "node_id": {
+              "minLength": 1,
+              "title": "Node Id",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "node_id",
+            "invocation_version"
+          ],
+          "title": "NodeStarted",
+          "type": "object"
+        },
+        "ReasoningDelta": {
+          "additionalProperties": false,
+          "description": "面向获准消费者发布的推理文本增量。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "delta": {
+              "minLength": 1,
+              "title": "Delta",
+              "type": "string"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "reasoning_delta",
+              "default": "reasoning_delta",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "delta"
+          ],
+          "title": "ReasoningDelta",
+          "type": "object"
+        },
+        "StopReason": {
+          "description": "Agent 结束运行时可持久化、可统计的原因。",
+          "enum": [
+            "COMPLETED",
+            "MAX_ITERATIONS",
+            "LOOP_DETECTED",
+            "MODEL_ERROR",
+            "STRUCTURED_OUTPUT_ERROR",
+            "CANCELLED",
+            "APPROVAL_REJECTED"
+          ],
+          "title": "StopReason",
+          "type": "string"
+        },
+        "TextDelta": {
+          "additionalProperties": false,
+          "description": "面向实时消费者发布的回答文本增量。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "delta": {
+              "minLength": 1,
+              "title": "Delta",
+              "type": "string"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "text_delta",
+              "default": "text_delta",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "delta"
+          ],
+          "title": "TextDelta",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallFinished": {
+          "additionalProperties": false,
+          "description": "工具调用结束；事件可按完成顺序发布。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "tool_call_finished",
+              "default": "tool_call_finished",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/ToolResult"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "result"
+          ],
+          "title": "ToolCallFinished",
+          "type": "object"
+        },
+        "ToolCallStarted": {
+          "additionalProperties": false,
+          "description": "工具调用通过 admission 并开始执行。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "tool_call_started",
+              "default": "tool_call_started",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "call"
+          ],
+          "title": "ToolCallStarted",
+          "type": "object"
+        },
+        "ToolResult": {
+          "additionalProperties": false,
+          "description": "工具执行后供历史、事件与幂等缓存共用的结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "content_parts": {
+              "items": {
+                "$ref": "#/$defs/TextPart"
+              },
+              "minItems": 1,
+              "title": "Content Parts",
+              "type": "array"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "content_parts",
+            "idempotency_key"
+          ],
+          "title": "ToolResult",
+          "type": "object"
+        },
+        "TurnFailed": {
+          "additionalProperties": false,
+          "description": "Turn 因不可收敛错误终止时唯一的失败事件。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "error": {
+              "$ref": "#/$defs/ErrorInfo"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn_failed",
+              "default": "turn_failed",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "error"
+          ],
+          "title": "TurnFailed",
+          "type": "object"
+        },
+        "TurnFinished": {
+          "additionalProperties": false,
+          "description": "Turn 正常或受控停止时唯一的完成事件。",
+          "properties": {
+            "correlation": {
+              "$ref": "#/$defs/Correlation"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn_finished",
+              "default": "turn_finished",
+              "title": "Kind",
+              "type": "string"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "title": "Occurred At",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Result"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            },
+            "stop_reason": {
+              "$ref": "#/$defs/StopReason"
+            }
+          },
+          "required": [
+            "event_id",
+            "seq",
+            "occurred_at",
+            "correlation",
+            "stop_reason"
+          ],
+          "title": "TurnFinished",
+          "type": "object"
+        },
+        "TurnIdentity": {
+          "additionalProperties": false,
+          "description": "Turn 的稳定身份；审批与恢复不得替换这些主键。",
+          "properties": {
+            "parent_turn_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Turn Id"
+            },
+            "session_id": {
+              "minLength": 1,
+              "title": "Session Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "minLength": 1,
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "session_id"
+          ],
+          "title": "TurnIdentity",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "approval_requested": "#/$defs/ApprovalRequested",
+          "graph_interrupted": "#/$defs/GraphInterrupted",
+          "graph_started": "#/$defs/GraphStarted",
+          "node_finished": "#/$defs/NodeFinished",
+          "node_started": "#/$defs/NodeStarted",
+          "reasoning_delta": "#/$defs/ReasoningDelta",
+          "text_delta": "#/$defs/TextDelta",
+          "tool_call_finished": "#/$defs/ToolCallFinished",
+          "tool_call_started": "#/$defs/ToolCallStarted",
+          "turn_failed": "#/$defs/TurnFailed",
+          "turn_finished": "#/$defs/TurnFinished"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/GraphStarted"
+        },
+        {
+          "$ref": "#/$defs/NodeStarted"
+        },
+        {
+          "$ref": "#/$defs/NodeFinished"
+        },
+        {
+          "$ref": "#/$defs/TextDelta"
+        },
+        {
+          "$ref": "#/$defs/ReasoningDelta"
+        },
+        {
+          "$ref": "#/$defs/ToolCallStarted"
+        },
+        {
+          "$ref": "#/$defs/ToolCallFinished"
+        },
+        {
+          "$ref": "#/$defs/ApprovalRequested"
+        },
+        {
+          "$ref": "#/$defs/GraphInterrupted"
+        },
+        {
+          "$ref": "#/$defs/TurnFinished"
+        },
+        {
+          "$ref": "#/$defs/TurnFailed"
+        }
+      ]
+    },
+    "ContentPart": {
+      "$defs": {
+        "JsonValue": {},
+        "ReasoningPart": {
+          "additionalProperties": false,
+          "description": "可按脱敏策略隐藏的推理文本。",
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "default": "reasoning",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "ReasoningPart",
+          "type": "object"
+        },
+        "TextPart": {
+          "additionalProperties": false,
+          "description": "可展示的普通文本内容。",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "default": "text",
+              "title": "Kind",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextPart",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "模型发起的工具调用，``seq`` 决定结果写回顺序。",
+          "properties": {
+            "arguments": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Arguments",
+              "type": "object"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "minLength": 1,
+              "title": "Idempotency Key",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "seq",
+            "idempotency_key"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "ToolCallPart": {
+          "additionalProperties": false,
+          "description": "助手消息中已完成组装的工具调用。",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/ToolCall"
+            },
+            "kind": {
+              "const": "tool_call",
+              "default": "tool_call",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call"
+          ],
+          "title": "ToolCallPart",
+          "type": "object"
+        },
+        "ToolResultPart": {
+          "additionalProperties": false,
+          "description": "工具角色消息中与 ``call_id`` 配对的执行结果。",
+          "properties": {
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "is_error": {
+              "default": false,
+              "title": "Is Error",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_result",
+              "default": "tool_result",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output": {
+              "title": "Output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "output"
+          ],
+          "title": "ToolResultPart",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "reasoning": "#/$defs/ReasoningPart",
+          "text": "#/$defs/TextPart",
+          "tool_call": "#/$defs/ToolCallPart",
+          "tool_result": "#/$defs/ToolResultPart"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextPart"
+        },
+        {
+          "$ref": "#/$defs/ReasoningPart"
+        },
+        {
+          "$ref": "#/$defs/ToolCallPart"
+        },
+        {
+          "$ref": "#/$defs/ToolResultPart"
+        }
+      ]
+    },
+    "ModelEvent": {
+      "$defs": {
+        "JsonValue": {},
+        "ModelCompleted": {
+          "additionalProperties": false,
+          "description": "模型流正常结束，并给出归一化完成原因。",
+          "properties": {
+            "finish_reason": {
+              "$ref": "#/$defs/ModelFinishReason"
+            },
+            "kind": {
+              "const": "model_completed",
+              "default": "model_completed",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "finish_reason"
+          ],
+          "title": "ModelCompleted",
+          "type": "object"
+        },
+        "ModelErrorInfo": {
+          "additionalProperties": false,
+          "description": "供事件和异常共同引用的模型错误摘要。",
+          "properties": {
+            "extensions": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "title": "Extensions",
+              "type": "object"
+            },
+            "kind": {
+              "$ref": "#/$defs/ModelErrorKind"
+            },
+            "message": {
+              "minLength": 1,
+              "title": "Message",
+              "type": "string"
+            },
+            "provider_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Provider Code"
+            },
+            "retryable": {
+              "title": "Retryable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "retryable"
+          ],
+          "title": "ModelErrorInfo",
+          "type": "object"
+        },
+        "ModelErrorKind": {
+          "description": "供应商错误经过 Core 归一化后的可观测分类。",
+          "enum": [
+            "AUTHENTICATION",
+            "RATE_LIMIT",
+            "TIMEOUT",
+            "PROTOCOL",
+            "CONTENT",
+            "UNKNOWN"
+          ],
+          "title": "ModelErrorKind",
+          "type": "string"
+        },
+        "ModelFailed": {
+          "additionalProperties": false,
+          "description": "模型流以结构化供应商错误结束。",
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ModelErrorInfo"
+            },
+            "kind": {
+              "const": "model_failed",
+              "default": "model_failed",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "title": "ModelFailed",
+          "type": "object"
+        },
+        "ModelFinishReason": {
+          "description": "供应商完成原因经过协议适配后的稳定分类。",
+          "enum": [
+            "STOP",
+            "TOOL_CALLS",
+            "LENGTH",
+            "CONTENT_FILTER"
+          ],
+          "title": "ModelFinishReason",
+          "type": "string"
+        },
+        "ModelReasoningDelta": {
+          "additionalProperties": false,
+          "description": "模型流中可按策略隐藏的推理增量。",
+          "properties": {
+            "delta": {
+              "minLength": 1,
+              "title": "Delta",
+              "type": "string"
+            },
+            "kind": {
+              "const": "model_reasoning_delta",
+              "default": "model_reasoning_delta",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "delta"
+          ],
+          "title": "ModelReasoningDelta",
+          "type": "object"
+        },
+        "ModelTextDelta": {
+          "additionalProperties": false,
+          "description": "模型流中新增的可展示文本。",
+          "properties": {
+            "delta": {
+              "minLength": 1,
+              "title": "Delta",
+              "type": "string"
+            },
+            "kind": {
+              "const": "model_text_delta",
+              "default": "model_text_delta",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "delta"
+          ],
+          "title": "ModelTextDelta",
+          "type": "object"
+        },
+        "ModelToolCallDelta": {
+          "additionalProperties": false,
+          "description": "模型流中按序到达的工具名称或 JSON 参数片段。",
+          "properties": {
+            "arguments_delta": {
+              "default": "",
+              "title": "Arguments Delta",
+              "type": "string"
+            },
+            "call_id": {
+              "minLength": 1,
+              "title": "Call Id",
+              "type": "string"
+            },
+            "kind": {
+              "const": "model_tool_call_delta",
+              "default": "model_tool_call_delta",
+              "title": "Kind",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "seq": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "seq"
+          ],
+          "title": "ModelToolCallDelta",
+          "type": "object"
+        },
+        "ModelUsage": {
+          "additionalProperties": false,
+          "description": "一次模型调用累计报告的 token 用量。",
+          "properties": {
+            "cached_input_tokens": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Cached Input Tokens",
+              "type": "integer"
+            },
+            "input_tokens": {
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "kind": {
+              "const": "model_usage",
+              "default": "model_usage",
+              "title": "Kind",
+              "type": "string"
+            },
+            "output_tokens": {
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "input_tokens",
+            "output_tokens"
+          ],
+          "title": "ModelUsage",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "model_completed": "#/$defs/ModelCompleted",
+          "model_failed": "#/$defs/ModelFailed",
+          "model_reasoning_delta": "#/$defs/ModelReasoningDelta",
+          "model_text_delta": "#/$defs/ModelTextDelta",
+          "model_tool_call_delta": "#/$defs/ModelToolCallDelta",
+          "model_usage": "#/$defs/ModelUsage"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ModelTextDelta"
+        },
+        {
+          "$ref": "#/$defs/ModelReasoningDelta"
+        },
+        {
+          "$ref": "#/$defs/ModelToolCallDelta"
+        },
+        {
+          "$ref": "#/$defs/ModelUsage"
+        },
+        {
+          "$ref": "#/$defs/ModelCompleted"
+        },
+        {
+          "$ref": "#/$defs/ModelFailed"
+        }
+      ]
+    }
+  }
+}
