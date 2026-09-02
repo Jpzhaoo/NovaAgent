@@ -17,10 +17,9 @@ scenario IDs, Python importability roots, and the Core dependency direction.
 | Product coverage | not yet meaningful | coverage gate starts with Phase 1 behavior |
 | Supported interpreters | Python 3.12, 3.13 | required CI matrix |
 
-The development tool versions are pinned in `requirements-dev.txt`. A complete
-transitive lockfile and SBOM become release gates once runtime dependencies are
-introduced; Phase 0 does not pretend the empty skeleton has production
-coverage.
+开发工具和运行时依赖统一由 `pyproject.toml` 声明，并在 Phase 1 引入依赖时
+开始使用 `uv.lock` 锁定完整传递依赖。SBOM 将在发布阶段成为门禁；当前基线
+不把空包骨架当作生产覆盖率。
 
 ## Required CI checks
 

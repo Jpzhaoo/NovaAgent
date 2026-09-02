@@ -5,7 +5,8 @@ NovaAgent 采用小步、可验证的提交方式。提交代码前请确认变�
 
 ## 开发环境
 
-- 支持 Python 3.12 和 3.13；建议使用隔离虚拟环境和项目锁定的依赖。
+- 使用 `uv sync --locked` 按 `uv.lock` 创建 Python 3.12+ 隔离环境；不要用
+  `pip install -r` 维护另一套依赖来源。
 - 从仓库根目录运行 `make check`。该命令是合并前的最小门禁，必须在本地
   通过后再提交。
 - Core 代码必须能够在无网络、数据库和可选依赖的环境中导入和测试。
@@ -41,4 +42,3 @@ NovaAgent 采用小步、可验证的提交方式。提交代码前请确认变�
 不要在 issue、日志、trace、cassette 或测试 fixture 中提交 API key、真实
 个人数据或未脱敏的敏感参数。工具副作用必须通过 `ToolExecutor` 和
 `PolicyGateway`；危险能力默认拒绝。
-

@@ -1,10 +1,14 @@
-.PHONY: check phase0-check test
+UV ?= uv
+
+.PHONY: check sync phase0-check test
 
 check: phase0-check test
 
+sync:
+	$(UV) sync --locked
+
 phase0-check:
-	python3 tools/check_phase0.py
+	$(UV) run --frozen python tools/check_phase0.py
 
 test:
-	python3 -m unittest discover -s tests -p 'test_*.py' -v
-
+	$(UV) run --frozen python -m unittest discover -s tests -p 'test_*.py' -v

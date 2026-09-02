@@ -7,8 +7,29 @@ name = "nova-agent-workspace"
 version = "0.1.0.dev0"
 description = "Development workspace for the NovaAgent monorepo"
 requires-python = ">=3.12"
+dependencies = ["nova-core"]
 license = { text = "Apache-2.0" }
 readme = "README.md"
+
+[dependency-groups]
+dev = [
+    "coverage==7.6.1",
+    "mypy==1.14.1",
+    "pytest==8.3.5",
+    "ruff==0.9.10",
+]
+
+[tool.uv]
+required-version = ">=0.12.9"
+
+[tool.uv.sources]
+nova-core = { workspace = true }
+nova-graph = { workspace = true }
+nova-react = { workspace = true }
+nova-runtime = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/nova-*"]
 
 [tool.nova]
 phase = 0
