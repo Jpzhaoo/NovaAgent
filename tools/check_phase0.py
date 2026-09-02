@@ -49,6 +49,10 @@ def validate(root: Path) -> tuple[dict[str, int], list[str]]:
         if _project_field(root_text, "requires-python") != ">=3.12":
             errors.append("root pyproject must declare Python >=3.12")
 
+    root_source = root / "src" / "nova_agent" / "__init__.py"
+    if not root_source.exists():
+        errors.append("root src layout is missing src/nova_agent/__init__.py")
+
     package_count = 0
     source_lines = 0
     for distribution, import_name in EXPECTED_PACKAGES.items():

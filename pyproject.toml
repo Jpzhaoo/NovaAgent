@@ -14,10 +14,12 @@ readme = "README.md"
 phase = 0
 python-supported = ["3.12", "3.13"]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
