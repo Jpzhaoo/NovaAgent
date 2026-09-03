@@ -214,6 +214,54 @@ class CoreTypeBoundaryTests(unittest.TestCase):
                 correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
             )
 
+    def test_model_request_pairs_tool_calls_and_results_across_messages(self) -> None:
+        """模型历史中的调用和结果必须按先后顺序及 call_id 一一闭合。"""
+
+        assistant = Message(
+            role=MessageRole.ASSISTANT,
+            content_parts=(ToolCallPart(call=self.call),),
+            created_at=self.now,
+        )
+        tool_result = Message(
+            role=MessageRole.TOOL,
+            content_parts=(ToolResultPart(call_id="call-1", output="完成"),),
+            created_at=self.now,
+        )
+        request = ModelRequest(
+            model="scripted",
+            messages=(self.user_message, assistant, tool_result),
+            correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+        )
+        restored_result = request.messages[-1].content_parts[0]
+        self.assertIsInstance(restored_result, ToolResultPart)
+        if isinstance(restored_result, ToolResultPart):
+            self.assertEqual("call-1", restored_result.call_id)
+
+        with self.assertRaises(ValidationError):
+            ModelRequest(
+                model="scripted",
+                messages=(self.user_message, tool_result),
+                correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+            )
+        with self.assertRaises(ValidationError):
+            ModelRequest(
+                model="scripted",
+                messages=(self.user_message, assistant),
+                correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+            )
+        with self.assertRaises(ValidationError):
+            ModelRequest(
+                model="scripted",
+                messages=(self.user_message, assistant, assistant, tool_result),
+                correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+            )
+        with self.assertRaises(ValidationError):
+            ModelRequest(
+                model="scripted",
+                messages=(self.user_message, assistant, tool_result, tool_result),
+                correlation=Correlation(turn_id="turn-1", trace_id="trace-1"),
+            )
+
     def test_policy_approval_flag_and_expiration_are_consistent(self) -> None:
         """审批判定和时间窗口不能形成互相矛盾的持久化状态。"""
 

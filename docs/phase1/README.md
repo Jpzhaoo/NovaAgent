@@ -18,10 +18,10 @@ Pydantic，不包含 HTTP、数据库、Web、Graph 或 ReAct 的具体实现。
 
 ## 当前实测基线
 
-- `nova-core` Python 源码：1,452 行，低于 Phase 1 的 5,000 行上限。
+- `nova-core` Python 源码：1,475 行，低于 Phase 1 的 5,000 行上限。
 - 公开 Pydantic 模型/事件：38 个；枚举：11 个；判别联合：3 个。
 - ABC 端口：11 个，其中 Session/Turn/Event Store 属于同一存储端口组。
-- 单元测试：23 项通过。
+- 单元测试：24 项通过。
 - strict mypy：0 error；Ruff：0 error。
 - Core 分支覆盖率：94%，高于 90% 门禁。
 - Python 3.12/3.13：由 GitHub Actions 的 `dev` 矩阵执行同一 `make check`。

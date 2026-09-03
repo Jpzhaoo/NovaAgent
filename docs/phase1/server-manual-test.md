@@ -47,7 +47,7 @@ make check
 
 - structural baseline checks passed；
 - core schema catalog is current；
-- 23 项单元测试为 `OK`；
+- 24 项单元测试为 `OK`；
 - Ruff 为 `All checks passed!`；
 - mypy 为 `Success: no issues found`；
 - Core 总覆盖率不低于 90%；

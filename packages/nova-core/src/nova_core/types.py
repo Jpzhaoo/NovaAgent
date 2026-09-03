@@ -247,6 +247,29 @@ class ModelRequest(_FrozenModel):
             raise ValueError("model request tool names must be unique")
         return self
 
+    @model_validator(mode="after")
+    def validate_tool_call_pairing(self) -> Self:
+        """历史中的工具调用必须由后续结果按 call_id 一一闭合。"""
+
+        requested: set[str] = set()
+        resolved: set[str] = set()
+        for message in self.messages:
+            for part in message.content_parts:
+                if isinstance(part, ToolCallPart):
+                    if part.call.call_id in requested:
+                        raise ValueError("tool call ids must be unique in model history")
+                    requested.add(part.call.call_id)
+                elif isinstance(part, ToolResultPart):
+                    if part.call_id not in requested:
+                        raise ValueError("tool result must follow a matching tool call")
+                    if part.call_id in resolved:
+                        raise ValueError("tool call can have only one result")
+                    resolved.add(part.call_id)
+
+        if requested != resolved:
+            raise ValueError("every tool call in model history requires one result")
+        return self
+
 
 class ToolResult(_FrozenModel):
     """工具执行后供历史、事件与幂等缓存共用的结果。"""
