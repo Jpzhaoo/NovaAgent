@@ -46,6 +46,27 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["ASYNC", "B", "E4", "E7", "E9", "F", "I"]
 
+[tool.ruff.lint.isort]
+known-first-party = [
+    "nova_agent",
+    "nova_cli",
+    "nova_core",
+    "nova_external",
+    "nova_graph",
+    "nova_http",
+    "nova_mcp",
+    "nova_media",
+    "nova_memory",
+    "nova_models",
+    "nova_multi",
+    "nova_policy",
+    "nova_react",
+    "nova_runtime",
+    "nova_scope",
+    "nova_storage",
+    "nova_terminal",
+]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

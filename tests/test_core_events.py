@@ -4,6 +4,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
+from pydantic import BaseModel, TypeAdapter
+
 from nova_core import (
     AgentEvent,
     ApprovalRequested,
@@ -37,7 +39,6 @@ from nova_core import (
     TurnFinished,
     TurnIdentity,
 )
-from pydantic import BaseModel, TypeAdapter
 
 
 class EventFields(TypedDict):

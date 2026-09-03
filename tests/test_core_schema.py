@@ -4,6 +4,8 @@ import inspect
 import unittest
 from enum import Enum
 
+from pydantic import BaseModel
+
 import nova_core
 from nova_core.schema import (
     CORE_ENUM_TYPES,
@@ -11,7 +13,6 @@ from nova_core.schema import (
     CORE_UNION_TYPES,
     build_core_schema_catalog,
 )
-from pydantic import BaseModel
 
 
 class CoreSchemaTests(unittest.TestCase):
