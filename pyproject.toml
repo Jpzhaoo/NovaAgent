@@ -32,7 +32,7 @@ nova-runtime = { workspace = true }
 members = ["packages/nova-*"]
 
 [tool.nova]
-phase = 0
+phase = 1
 python-supported = ["3.12", "3.13"]
 
 [tool.setuptools.packages.find]

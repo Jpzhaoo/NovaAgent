@@ -25,3 +25,4 @@ make check
 补充。Phase 1 开始后，每新增一个公共契约都必须同时增加 schema、序列化和
 端口 conformance 证据，并将结果更新到本索引或对应阶段文档。
 
+Phase 1 的实现与验收证据见 [`docs/phase1/README.md`](../phase1/README.md)。
