@@ -1,5 +1,5 @@
 UV ?= uv
-CORE_SRC := packages/nova-core/src
+SOURCE_ROOT := src
 
 .PHONY: check sync phase0-check schema schema-check test lint typecheck coverage package-check
 
@@ -12,22 +12,22 @@ phase0-check:
 	$(UV) run --frozen python tools/check_phase0.py
 
 schema:
-	PYTHONPATH=$(CORE_SRC) $(UV) run --frozen python tools/generate_core_schema.py
+	PYTHONPATH=$(SOURCE_ROOT) $(UV) run --frozen python tools/generate_core_schema.py
 
 schema-check:
-	PYTHONPATH=$(CORE_SRC) $(UV) run --frozen python tools/generate_core_schema.py --check
+	PYTHONPATH=$(SOURCE_ROOT) $(UV) run --frozen python tools/generate_core_schema.py --check
 
 test:
-	PYTHONPATH=src:$(CORE_SRC) $(UV) run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+	PYTHONPATH=$(SOURCE_ROOT) $(UV) run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
 
 lint:
-	$(UV) run --frozen ruff check src $(CORE_SRC) tools tests
+	$(UV) run --frozen ruff check $(SOURCE_ROOT) tools tests
 
 typecheck:
-	$(UV) run --frozen mypy src $(CORE_SRC) tools tests
+	$(UV) run --frozen mypy $(SOURCE_ROOT) tools tests
 
 coverage:
-	PYTHONPATH=src:$(CORE_SRC) $(UV) run --frozen coverage run -m unittest discover -s tests -p 'test_*.py'
+	PYTHONPATH=$(SOURCE_ROOT) $(UV) run --frozen coverage run -m unittest discover -s tests -p 'test_*.py'
 	$(UV) run --frozen coverage report
 
 package-check:

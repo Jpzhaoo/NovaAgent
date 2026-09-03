@@ -56,9 +56,12 @@ def validate(root: Path) -> tuple[dict[str, int], list[str]]:
     package_count = 0
     source_lines = 0
     for distribution, import_name in EXPECTED_PACKAGES.items():
+        # 根 src 是唯一源码来源；发行目录只用相对链接提供独立构建上下文。
         package_dir = root / "packages" / distribution
         metadata = package_dir / "pyproject.toml"
-        init_file = package_dir / "src" / import_name / "__init__.py"
+        source_dir = root / "src" / import_name
+        source_link = package_dir / "src" / import_name
+        init_file = source_dir / "__init__.py"
         if not metadata.exists():
             errors.append(f"missing metadata: {metadata.relative_to(root)}")
             continue
@@ -70,12 +73,19 @@ def validate(root: Path) -> tuple[dict[str, int], list[str]]:
             errors.append(f"{distribution} version does not match VERSION")
         if _project_field(metadata_text, "requires-python") != ">=3.12":
             errors.append(f"{distribution} must declare Python >=3.12")
+        source_config = f'where = ["src"]\ninclude = ["{import_name}*"]'
+        if source_config not in metadata_text:
+            errors.append(f"{distribution} must package only src/{import_name}")
+        if not source_link.is_symlink() or source_link.resolve() != source_dir.resolve():
+            errors.append(
+                f"{source_link.relative_to(root)} must link to src/{import_name}"
+            )
         if not init_file.exists():
             errors.append(f"missing import root: {init_file.relative_to(root)}")
         else:
             source_lines += sum(
                 len(source_file.read_text(encoding="utf-8").splitlines())
-                for source_file in (package_dir / "src").rglob("*.py")
+                for source_file in source_dir.rglob("*.py")
             )
 
     required_docs = (
@@ -100,7 +110,7 @@ def validate(root: Path) -> tuple[dict[str, int], list[str]]:
         errors.append(f"scenario matrix must contain exactly E2E-01..E2E-12 (found {sorted(scenario_ids)})")
 
     forbidden_core_imports = {"nova_graph", "nova_react", "nova_runtime", "nova_storage", "nova_models", "nova_policy"}
-    core_src = root / "packages/nova-core/src"
+    core_src = root / "src/nova_core"
     for source_file in core_src.rglob("*.py"):
         try:
             tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))

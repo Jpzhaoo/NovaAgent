@@ -5,7 +5,7 @@ ReAct 运行时。以下清单对应 `docs/PRD.md` 第 8 节的任务与验收�
 
 | PRD 任务 | 交付物 | 验证证据 |
 |---|---|---|
-| Monorepo、包布局、版本策略 | [`packages/`](../../packages/)、[`VERSION`](../../VERSION)、[`VERSIONING.md`](../VERSIONING.md) | 16 个包的 `pyproject.toml` 与版本一致性结构检查 |
+| Monorepo、源码布局、版本策略 | [`src/`](../../src/)、[`packages/`](../../packages/)、[`VERSION`](../../VERSION)、[`VERSIONING.md`](../VERSIONING.md) | 根 `src/` 下 16 个能力模块及各发行物元数据的一致性结构检查 |
 | 贡献指南与术语表 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md)、[`GLOSSARY.md`](../GLOSSARY.md) | 提交/推送、边界和安全约束已书面化 |
 | 12 个端到端场景 | [`scenario-matrix.md`](scenario-matrix.md) | `E2E-01` 到 `E2E-12` 全量检查；后续测试按 ID 回链 |
 | Core boundary、Turn lifecycle、security gateway ADR | [`docs/adr/`](../adr/) | 三份 Proposed ADR 已提交并纳入结构检查 |

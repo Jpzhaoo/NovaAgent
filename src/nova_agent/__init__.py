@@ -1,10 +1,7 @@
-"""NovaAgent workspace composition root.
+"""NovaAgent 仓库级组合命名空间。
 
-Runtime capabilities are implemented in the independently publishable
-packages under ``packages/*/src``. This root package is intentionally small:
-it provides the repository-level namespace and version while keeping all
-workspace application code under the conventional top-level ``src`` tree.
+所有运行时能力都直接位于顶层 ``src`` 源码树，并由 ``packages/nova-*`` 中的
+发行元数据分别构建。当前根包只提供仓库级命名空间和统一版本，不承载具体能力。
 """
 
 __version__ = "0.1.0.dev0"
-

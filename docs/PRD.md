@@ -244,24 +244,27 @@ NovaAgent 是一个面向 Python 3.12+ 的 Graph-driven ReAct Agent 框架。它
 ### 5.1 包边界
 
 ```text
+src/
+  nova_core/        # types + ABC + ControlPort + EventSink（稳定内核契约）
+  nova_graph/       # generic Graph Engine + Linear/Parallel schedulers
+  nova_react/       # Graph-driven ReActAgent + standard ReAct nodes
+  nova_runtime/     # TurnEngine + ToolExecutor，组合 core/graph/react
+  nova_storage/     # SQLite/File stores，实现 core ports
+  nova_models/      # HTTP/SSE gateway，实现 ModelGateway
+  nova_policy/      # approval、workspace、network、env guards
+  nova_cli/         # CLI adapter
+  nova_http/        # ASGI/SSE adapter
+  nova_memory/      # Session/Archive/Core Memory/Experience providers
+  nova_multi/       # parent-child agents、inbox 和协作拓扑
+  nova_mcp/         # MCP ToolProvider
+  nova_scope/       # declarative scope/profile/capability compiler
+  nova_media/       # attachment store and multimodal injection
+  nova_terminal/    # cross-platform PTY/subprocess adapters
+  nova_external/    # external CLI agent harness
 packages/
-  nova-core/        # types + ABC + ControlPort + EventSink（稳定内核契约）
-  nova-graph/       # generic Graph Engine + Linear/Parallel schedulers
-  nova-react/       # Graph-driven ReActAgent + standard ReAct nodes
-  nova-runtime/     # TurnEngine + ToolExecutor，组合 core/graph/react
-  nova-storage/     # SQLite/File stores，实现 core ports
-  nova-models/      # HTTP/SSE gateway，实现 ModelGateway
-  nova-policy/      # approval、workspace、network、env guards
-  nova-cli/         # CLI adapter
-  nova-http/        # ASGI/SSE adapter
-  nova-memory/      # Session/Archive/Core Memory/Experience providers
-  nova-multi/       # parent-child agents、inbox 和协作拓扑
-  nova-mcp/         # MCP ToolProvider
-  nova-scope/       # declarative scope/profile/capability compiler
-  nova-media/       # attachment store and multimodal injection
-  nova-terminal/    # cross-platform PTY/subprocess adapters
-  nova-external/    # external CLI agent harness
-  examples/         # 业务示例，不进入 core 发布包
+  nova-*/pyproject.toml  # 各能力的独立发行元数据
+  nova-*/src/nova_*      # 指向根 src 对应模块的相对链接，不存放实现副本
+  examples/              # 业务示例，不进入 core 发布包
 ```
 
 依赖方向只能由上层包指向 `nova-core` 的端口；`nova-graph` 只依赖标准库和 core types，`nova-react` 依赖 graph + core，`nova-runtime` 负责把 ReAct、工具和策略接成一次 Turn。`nova-core` 不得 import storage、HTTP、CLI、MCP、graph、react 或 WebUI。架构测试同时使用 AST 扫描和 import-time guard。

@@ -1,7 +1,9 @@
 # Phase 1：Core Types 与端口交付索引
 
-Phase 1 将跨包数据、事件、异常和运行时依赖收敛到 `nova-core`。Core 只依赖
-Pydantic，不包含 HTTP、数据库、Web、Graph 或 ReAct 的具体实现。
+Phase 1 将跨包数据、事件、异常和运行时依赖收敛到
+[`src/nova_core`](../../src/nova_core)。`packages/nova-core` 只保存独立发行所需
+元数据与指向根源码的相对链接；Core 只依赖 Pydantic，不包含 HTTP、数据库、
+Web、Graph 或 ReAct 的具体实现。
 
 ## 交付与证据
 

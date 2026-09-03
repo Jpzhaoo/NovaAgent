@@ -11,4 +11,4 @@ dependencies = ["nova-core==0.1.0.dev0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
+include = ["nova_policy*"]

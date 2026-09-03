@@ -37,6 +37,7 @@ python-supported = ["3.12", "3.13"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["nova_agent*"]
 
 [tool.ruff]
 line-length = 100
@@ -48,7 +49,7 @@ select = ["ASYNC", "B", "E4", "E7", "E9", "F", "I"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "packages/nova-core/src"
+mypy_path = "src"
 
 [tool.coverage.run]
 branch = true
